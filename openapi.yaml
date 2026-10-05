@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info:
+  title: ToolFarm Agent Extract
+  version: 0.1.0
+  description: |
+    URL → clean markdown/text for AI agents (extract-only v1).
+
+    **Platforms**
+    - MCPize: expose as MCP tool `url_to_markdown`; meter with x402 USDC on Base
+      at ~$0.01–0.02 per call (publisher ~80%).
+    - Ozma: import this OpenAPI; Stripe Connect payouts (x402 disabled in Ozma prod).
+
+    Search / SERP is intentionally **not** in v1 — later add-on only.
+  contact:
+    name: ToolFarm
+servers:
+  - url: http://localhost:8080
+    description: Local
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  service: { type: string }
+                  version: { type: string }
+  /v1/url_to_markdown:
+    post:
+      operationId: urlToMarkdown
+      summary: Extract clean markdown from a public URL
+      description: |
+        Fetches a public http(s) page, strips chrome via trafilatura, returns
+        main content as markdown/text. Private IPs, localhost, and metadata
+        endpoints are rejected (SSRF guard).
+      security:
+        - bearerAuth: []
+      tags: [extract]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UrlToMarkdownRequest"
+            example:
+              url: https://example.com/
+      responses:
+        "200":
+          description: Extraction result (check success field)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractResult"
+        "400":
+          description: SSRF blocked or bad request
+        "401":
+          description: Missing/invalid API key (when API_KEY is set)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Optional shared secret when API_KEY is configured
+  schemas:
+    UrlToMarkdownRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          minLength: 8
+          description: Public http or https URL
+          example: https://example.com/
+    ExtractResult:
+      type: object
+      required: [url, markdown, char_count, success]
+      properties:
+        url:
+          type: string
+          description: Final URL after safe redirects
+        title:
+          type: string
+          nullable: true
+        markdown:
+          type: string
+          description: Clean main-content text (markdown-ish)
+        char_count:
+          type: integer
+        success:
+          type: boolean
+        error:
+          type: string
+          nullable: true
