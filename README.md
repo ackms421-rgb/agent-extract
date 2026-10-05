@@ -126,3 +126,12 @@ docker run --rm -p 8080:8080 toolfarm-agent-extract
 2. Import `openapi.yaml` (or live `/openapi.json`) into Ozma with Stripe Connect.
 3. Add observability (request counts, error rates) without a support queue.
 4. Only then consider `agent_serp` as a metered add-on.
+
+## MCPize discovery vs auth
+
+MCPize probes `POST /mcp` with `initialize` and `tools/list` **without** a key — those methods stay open.
+
+When `API_KEY` is set in the environment:
+- `tools/call` and `POST /v1/url_to_markdown` require `Authorization: Bearer <key>` **or** `X-MCP-Api-Key: <key>`
+- Leave `API_KEY` empty on free community deploys if the host meters at the edge
+

@@ -36,15 +36,28 @@ class UrlToMarkdownRequest(BaseModel):
     url: str = Field(..., description="Public http(s) URL to extract", min_length=8)
 
 
+def _extract_api_key(
+    authorization: str | None,
+    x_mcp_api_key: str | None,
+) -> str | None:
+    if x_mcp_api_key and x_mcp_api_key.strip():
+        return x_mcp_api_key.strip()
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ").strip()
+    return None
+
+
 def require_api_key(
     authorization: str | None = Header(default=None),
+    x_mcp_api_key: str | None = Header(default=None, alias="X-MCP-Api-Key"),
     settings: Settings = Depends(get_settings),
 ) -> None:
+    """Enforce API_KEY when set. Accepts Bearer or X-MCP-Api-Key (MCPize)."""
     if not settings.api_key:
         return
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    token = authorization.removeprefix("Bearer ").strip()
+    token = _extract_api_key(authorization, x_mcp_api_key)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing API key")
     if token != settings.api_key:
         raise HTTPException(status_code=401, detail="Invalid API key")
 
@@ -102,10 +115,15 @@ class McpJsonRpc(BaseModel):
 @app.post("/mcp")
 async def mcp_endpoint(
     rpc: McpJsonRpc,
-    _: None = Depends(require_api_key),
+    authorization: str | None = Header(default=None),
+    x_mcp_api_key: str | None = Header(default=None, alias="X-MCP-Api-Key"),
     settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
-    """Lightweight MCP tools surface (list + call). Not a full transport stack."""
+    """Lightweight MCP tools surface (list + call). Not a full transport stack.
+
+    Discovery methods (initialize, tools/list) stay open so MCPize can probe the
+    server. tools/call enforces API_KEY when configured (Bearer or X-MCP-Api-Key).
+    """
     req_id = rpc.id
 
     if rpc.method in ("initialize", "notifications/initialized"):
@@ -127,6 +145,12 @@ async def mcp_endpoint(
         )
 
     if rpc.method == "tools/call":
+        if settings.api_key:
+            token = _extract_api_key(authorization, x_mcp_api_key)
+            if not token:
+                raise HTTPException(status_code=401, detail="Missing API key")
+            if token != settings.api_key:
+                raise HTTPException(status_code=401, detail="Invalid API key")
         params = rpc.params or {}
         name = params.get("name")
         arguments = params.get("arguments") or {}
